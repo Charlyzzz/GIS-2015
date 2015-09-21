@@ -2,8 +2,8 @@
 import math
 from collections import OrderedDict
 
+import googlemaps
 import geomag
-from bottle import get, run, request
 
 Radio_Medio = 6371.0 * 1000
 Radio_Ecuat = 6378.1 * 1000
@@ -11,29 +11,62 @@ Radio_Polar = 6356.8 * 1000
 Orbita_Geo = 35786.0 * 1000
 Foot = 0.3048
 Satellites = {'AR1': -71.8, 'AR2': -81.0}
-Geocoding_Key = 'AIzaSyC8agUhPelme7iIcLiQcNJJqcY8Ke7Jg_8'
+Gmaps = googlemaps.Client(key = 'AIzaSyC8agUhPelme7iIcLiQcNJJqcY8Ke7Jg_8')
 
 
 class SatError(Exception):
     pass
 
 
+def response_address(googlemaps_response):
+    return googlemaps_response[0]['formatted_address']
+
+
+def response_latitude(googlemaps_response):
+    return googlemaps_response[0]['geometry']['location']['lat']
+
+
+def response_longitude(googlemaps_response):
+    return googlemaps_response[0]['geometry']['location']['lng']
+
+
+def response_altitude(googlemaps_response):
+    return googlemaps_response[0]['elevation']
+
+
 def google_geocode(address):
     """ dada una dirección, devuelve dirección obtenida, latitud, longitud """
+    try:
+        geocode_result = Gmaps.geocode(address)
+    except ValueError:
+        raise SatError("Falló conexión a Google Geocode API")
+    if not geocode_result:
+        raise SatError("La dirección no pudo ser resuelta por Google")
+    if len(geocode_result) > 1:
+        raise SatError("Se generaron múltiples matches")
 
-    # georreferenciar una dirección usando Google Apis (o cualquier otra), considerar las siguientes excepciones:
-    #      raise SatError("La dirección no pudo ser resuelta por Google")
-    #       raise SatError("Falló conexión a Google Geocode API")
-    return formatted_address, latitud, longitud
+    # raise SatError("La dirección no pudo ser resuelta por Google")
+    # raise SatError("Falló conexión a Google Geocode API")
+    # Tanto la multiplicidad de los resultados como la inexistencia
+
+    return response_address(geocode_result), response_latitude(geocode_result), response_longitude(geocode_result)
 
 
 def google_elevation(lat, lng):
     """ dada la latitud y longitud, devuelve elevacion en metros """
+    try:
+        elevation_result = Gmaps.elevation((lat, lng))
+    except ValueError:
+        raise SatError("Falló conexión a Google Elevation API")
+    if not elevation_result:
+        raise SatError("La altura no pudo ser resuelta por Google")
+    if len(elevation_result) > 1:
+        raise SatError("Se generaron múltiples matches")
 
     # obtener la elevación usando Google Apis (o cualquier otra), considerar las siguientes excepciones:
     #       raise SatError("La altura no pudo ser resuelta por Google")
     #       raise SatError("Falló conexión a Google Elevation API")
-    return elevation
+    return response_altitude(elevation_result)
 
 
 def convert_float(name, s, min_value, max_value):
@@ -110,23 +143,3 @@ def satellite_finder(params):
                         ('alt', '%5.1f' % alt), ('sat', '%5.1f' % sat), ('distance', '%5.1f' % distance),
                         ('elevation', '%5.2f' % elevation), ('azimuth_true', '%5.2f' % azimuth),
                         ('azimuth_magn', '%5.2f' % (azimuth - magn))])
-
-
-@get(r'/ubicar')
-def ubicar():
-    """ Parámetros:
-        address: dirección de la antena, tiene prioridad sobre lat/lng
-        lat/lng: latitud y longitud de la antena, en grados
-        alt: altura sobre el nivel de mar; con nulo resuelve vía Google, usar cero para no utilizar
-        sat: longitud del satélite, en grados; también acepta 'AR1', 'AR2' y 'AMC6'
-    """
-    try:
-        return satellite_finder(request.params)
-    except Exception as e:
-        return {'error': e.args[0].replace('ERROR: ', '')}
-
-
-if __name__ == "__main__":
-    # si funciona por favor ejecutar enviar el resultado de poner en el navegador:
-    #       localhost:8080/ubicar?address=bariloche&sat=ar1
-    run(host = '0.0.0.0', port = 8080)
